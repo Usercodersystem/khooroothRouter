@@ -1,22 +1,33 @@
 name: Go build and test
-
 on:
   push:
-    branches: [main]
+    branches: [main, go-port-backup-restore]
   pull_request:
+    branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Expand Go source bundle
+        run: tar -xzf source/khr-go-source.tar.gz -C .
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
-      - run: gofmt -w cmd/khoorooth/main.go
+          go-version: '1.23.x'
+          cache: true
+      - run: go mod download
       - run: go test ./...
-      - run: go build ./...
+      - name: Build Linux binaries
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o dist/khoorooth-linux-$arch ./cmd/khoorooth
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: khoorooth-linux
+          path: dist/*
+          retention-days: 14
