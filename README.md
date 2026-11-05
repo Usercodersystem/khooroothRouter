@@ -1,65 +1,44 @@
-# Khoorooth Router 🐓
+# Khoorooth Router — Go edition
 
-**Khoorooth Router Lite** — a low-footprint OpenAI-compatible reverse proxy/gateway prototype, written in Go.
+A lightweight, single-binary AI gateway with an embedded Persian dashboard. This Go implementation is a clean-room port inspired by the feature set and data layout of [9Router](https://github.com/decolua/9router), with a compatibility importer for 9Router backups.
 
-> This is a new lightweight gateway project, not a full feature-equivalent port of 9Router. It forwards requests to an upstream OpenAI-compatible API; it does not implement provider aggregation, dashboard, account management, or billing.
+**Current milestone:** dashboard login, provider management, API key management, OpenAI-compatible `/v1/chat/completions` and `/v1/models`, priority fallback, usage logging, and 9Router backup migration. This is not yet feature-complete parity with all 9Router executors: provider-specific OAuth refresh, non-OpenAI protocol translators, and several specialized provider flows are not implemented. Imported OAuth data and unknown tables are retained; common bearer access tokens may be carried forward but are not refreshed.
 
-## Features
-- `POST /v1/chat/completions` and `GET /v1/models` proxying
-- Streaming/SSE passthrough using Go's standard reverse proxy
-- Optional client API key authentication
-- Upstream API key injection
-- Request body limit, concurrent request cap, per-IP token-bucket rate limit
-- Health endpoint: `GET /healthz`
-- Minimal scratch Docker image and GitHub Actions build workflow
+## Start with Docker
 
-## Quick start
-Requires Go 1.22+.
-
-```bash
-export UPSTREAM_URL=https://api.openai.com
-export UPSTREAM_API_KEY='your-provider-key'
-export KHOOROOTH_API_KEY='your-client-key'
-go run ./cmd/khoorooth
-```
-
-```bash
-curl http://localhost:8080/v1/models \
-  -H "Authorization: Bearer your-client-key"
-```
-
-## Docker
-Copy `.env.example` to `.env`, fill in the secrets, then:
-
-```bash
+```sh
+cp .env.example .env
+# Edit .env: set a strong INITIAL_PASSWORD and SESSION_SECRET
 docker compose up -d --build
 ```
 
-The compose file binds the service to localhost (127.0.0.1:8080) intentionally. Put a TLS reverse proxy in front before public exposure.
+Open `http://SERVER:20128`. Create an API key in the dashboard and use `http://SERVER:20128/v1` as the OpenAI-compatible base URL.
 
-## Environment variables
-| Variable | Default | Meaning |
-|---|---|---|
-| `LISTEN_ADDR` | `:8080` | Listen address |
-| `UPSTREAM_URL` | `https://api.openai.com` | Upstream API base URL |
-| `UPSTREAM_API_KEY` | empty | Provider secret |
-| `KHOOROOTH_API_KEY` | empty | Client key; empty disables client auth |
-| `MAX_BODY_BYTES` | `1048576` | Request body cap (1 MiB) |
-| `MAX_CONCURRENCY` | `4` | Active request limit |
-| `RATE_LIMIT_RPS` | `3` | Per-IP token refill rate |
-| `RATE_LIMIT_BURST` | `6` | Per-IP burst capacity |
-| `UPSTREAM_TIMEOUT_SECONDS` | `120` | Upstream response-header timeout |
+## Build without Docker
 
-## RAM reality check
-Go generally has lower baseline overhead than a full Node/Next.js stack, but **128 MB for the entire VPS (OS + Docker + service) with multiple public users is not a guaranteed safe target**. Streaming connections and concurrent requests still consume memory. Start with low concurrency, test RSS under real traffic, and consider running the binary directly without Docker on a minimal OS. Docker's memory limit is an OOM guard, not a promise that the process will fit.
+The Go source and embedded dashboard are shipped in `source/khr-go-source.tar.gz` to keep the initial migration commit compact. Expand it once before building:
 
-## Security checklist before public use
-- Set a long random client key and upstream provider key.
-- Use TLS via Caddy/nginx or another trusted reverse proxy.
-- Do not expose provider credentials to callers.
-- Add durable user accounts, per-user quotas, usage tracking, and abuse controls before multi-user production.
-- In-memory IP rate limits are reset on restart and are not a billing system.
-- Restrict who can access the host and keep secrets out of git.
+```sh
+make unpack
+go mod download
+go build -trimpath -ldflags='-s -w' -o khoorooth ./cmd/khoorooth
+INITIAL_PASSWORD='strong-password' SESSION_SECRET="$(openssl rand -hex 32)" DATA_DIR=./data ./khoorooth
+```
 
-## License
-MIT
+## Import a 9Router backup
+
+In the dashboard, upload a ZIP/TAR.GZ of the `.9router` data directory containing `db/data.sqlite`, the standalone `db/data.sqlite`, or a legacy `db.json` export. The importer validates SQLite with `PRAGMA quick_check`, maps recognizable provider connections/API keys/combos/aliases, and preserves all imported rows in `legacy_data` for future migrations. Common API-key provider base URLs are inferred if absent from the backup. Verify every provider before relying on it and keep the original backup.
+
+Upload limits: 64 MiB archive; 192 MiB expanded archive. The current importer reads the uploaded archive into memory, so large backups can exceed the 128 MiB Compose memory envelope. Increase memory for larger imports; the 128 MiB limit is a target to measure, not a guarantee.
+
+## API
+
+- `GET /healthz`
+- `GET /v1/models`
+- `POST /v1/chat/completions` (streaming response passthrough)
+
+Public API routes require `Authorization: Bearer <key>` by default. Providers are tried in ascending priority order; network errors, HTTP 429, and upstream 5xx responses trigger fallback.
+
+## Acknowledgement
+
+9Router by decolua and contributors is a separate MIT-licensed project. This repository uses its documented data layout as an interoperability target; the upstream Next.js runtime is not included. See `UPSTREAM-9ROUTER-LICENSE.txt` and https://github.com/decolua/9router.
