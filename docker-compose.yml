@@ -1,0 +1,24 @@
+services:
+  khoorooth-router:
+    build: .
+    container_name: khoorooth-router
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      LISTEN_ADDR: ":8080"
+      MAX_BODY_BYTES: "${MAX_BODY_BYTES:-1048576}"
+      MAX_CONCURRENCY: "${MAX_CONCURRENCY:-2}"
+      RATE_LIMIT_RPS: "${RATE_LIMIT_RPS:-2}"
+      RATE_LIMIT_BURST: "${RATE_LIMIT_BURST:-4}"
+    ports:
+      - "127.0.0.1:8080:8080"
+    mem_limit: 48m
+    mem_reservation: 24m
+    memswap_limit: 48m
+    pids_limit: 32
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
