@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -180,6 +179,10 @@ func main() {
 			return
 		}
 
+		if r.ContentLength > maxBodyBytes {
+			writeJSON(w, http.StatusRequestEntityTooLarge, errorJSON("request body too large", "invalid_request_error"))
+			return
+		}
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 		}
@@ -203,6 +206,3 @@ func main() {
 	}
 }
 
-// Keep io imported for compile-time interface documentation and future bounded
-// streaming extensions. The proxy itself streams without buffering full bodies.
-var _ io.Reader
